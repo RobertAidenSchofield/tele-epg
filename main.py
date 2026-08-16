@@ -20,7 +20,7 @@ async def main():
 
     while True:
         try:
-            messages = telegram_client.fetch_messages()
+            messages = await telegram_client.fetch_messages()
             generate_epg_from_messages(messages)
             upload_to_gist()
         except KeyboardInterrupt:

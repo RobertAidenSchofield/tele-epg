@@ -21,11 +21,10 @@ class EPGTelegramClient:
             await self.client.disconnect()
             logger.info("Telegram client disconnected.")
 
-    def fetch_messages(self, limit=500):
+    async def fetch_messages(self, limit=500):
         """Fetch recent messages from the target chat."""
         logger.info(f"Fetching messages from {config.TARGET_CHAT}...")
-        messages = self.client.iter_messages(config.TARGET_CHAT, limit=limit)
-        message_list = [message for message in messages if message.text]
+        messages = self.client.iter_messages(config.TARGET_CHAT, limit=limit) # type: ignore
+        message_list = [message async for message in messages if message.text]
         logger.info(f"Fetched {len(message_list)} messages with text.")
         return message_list
-
