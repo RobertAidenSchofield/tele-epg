@@ -3,25 +3,39 @@ import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .time_utils import convert_utc_to_ny, convert_et_to_ny
+from time_utils import convert_utc_to_ny, convert_et_to_ny
 
 logger = logging.getLogger(__name__)
+ET_MARKER = re.compile(r"\bET\b", re.IGNORECASE)
 
 # --- Parsing Handlers ---
 
+def _line_has_et(match) -> bool:
+    """Check if the matched line contains an 'ET' marker."""
+    return bool(ET_MARKER.search(match.string or ""))
+
 def _handle_exact_utc(match, current_year):
-    """Handler for formats with exact 'start' and 'stop' UTC timestamps."""
-    start_dt_utc = datetime.strptime(match.group('start'), "%Y-%m-%d %H:%M:%S")
-    stop_dt_utc = datetime.strptime(match.group('stop'), "%Y-%m-%d %H:%M:%S")
-    start_time, offset = convert_utc_to_ny(start_dt_utc)
-    stop_time, _ = convert_utc_to_ny(stop_dt_utc)
+    start_dt = datetime.strptime(match.group('start'), "%Y-%m-%d %H:%M:%S")
+    stop_dt = datetime.strptime(match.group('stop'), "%Y-%m-%d %H:%M:%S")
+
+    if _line_has_et(match):
+        start_time, offset = convert_et_to_ny(start_dt)
+        stop_time, _ = convert_et_to_ny(stop_dt)
+    else:
+        start_time, offset = convert_utc_to_ny(start_dt)
+        stop_time, _ = convert_utc_to_ny(stop_dt)
+
     return {'start_time': start_time, 'stop_time': stop_time, 'offset': offset}
 
+
 def _handle_iso_utc(match, current_year):
-    """Handler for formats with a full ISO 8601 timestamp in UTC."""
-    iso_str = match.group('iso')
-    start_dt_utc = datetime.strptime(iso_str, "%Y-%m-%d %H:%M:%S")
-    start_time, offset = convert_utc_to_ny(start_dt_utc)
+    dt = datetime.strptime(match.group('iso'), "%Y-%m-%d %H:%M:%S")
+
+    if _line_has_et(match):
+        start_time, offset = convert_et_to_ny(dt)
+    else:
+        start_time, offset = convert_utc_to_ny(dt)
+
     return {'start_time': start_time, 'stop_time': None, 'offset': offset}
 
 def _handle_month_day_time_et(match, current_year):

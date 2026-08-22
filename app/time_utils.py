@@ -1,19 +1,36 @@
+import logging
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
+logger = logging.getLogger(__name__)
 
-def convert_utc_to_ny(naive_dt):
-    """Treat naive_dt as UTC, convert to America/New_York, return naive local dt and offset string."""
+NY_TZ = ZoneInfo("America/New_York")
+
+
+def convert_utc_to_ny(utc_dt: datetime) -> tuple[datetime, str]:
+    """
+    Converts a naive UTC datetime to a naive NY datetime and returns the offset.
+    """
     try:
-        utc_tz = ZoneInfo("UTC")
-        ny_tz = ZoneInfo("America/New_York")
-        aware_dt = naive_dt.replace(tzinfo=utc_tz).astimezone(ny_tz)
-        return aware_dt.replace(tzinfo=None), aware_dt.strftime(" %z")
-    except (ValueError, TypeError):
-        return naive_dt, " +0000"
+        if utc_dt.tzinfo is None:
+            utc_dt = utc_dt.replace(tzinfo=ZoneInfo("UTC"))
+
+        ny_dt = utc_dt.astimezone(NY_TZ)
+        offset_str = ny_dt.strftime('%z')
+
+        return ny_dt.replace(tzinfo=None), f" {offset_str}"
+    except (ValueError, TypeError) as e:
+        logger.error(f"Error converting UTC to NY time: {utc_dt} | {e}")
+        return utc_dt, " +0000"
 
 
-def convert_et_to_ny(naive_dt):
-    """Treat naive_dt as America/New_York, return naive local dt and offset string."""
-    ny_tz = ZoneInfo("America/New_York")
-    aware_dt = ny_tz.localize(naive_dt)
-    return aware_dt.replace(tzinfo=None), aware_dt.strftime(" %z")
+def convert_et_to_ny(et_dt: datetime) -> tuple[datetime, str]:
+    """
+    Converts a datetime object (assumed to be in ET) to a naive NY datetime
+    and returns the offset string. Handles both naive and aware inputs.
+    """
+    # If naive, assume it's in NY time and make it aware using .replace()
+    aware_dt = et_dt.replace(tzinfo=NY_TZ) if et_dt.tzinfo is None else et_dt.astimezone(NY_TZ)
+
+    offset_str = aware_dt.strftime('%z')
+    return aware_dt.replace(tzinfo=None), f" {offset_str}"

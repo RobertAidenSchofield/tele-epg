@@ -110,7 +110,7 @@ COPY . .
 RUN mkdir -p /app/data
 
 # Command to run the application
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]
 """
     try:
         with open('Dockerfile', 'w') as f:
