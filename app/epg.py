@@ -3,11 +3,17 @@ import logging
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import app.config as config
 from app.parser import parse_line
 
 logger = logging.getLogger(__name__)
+NY_TZ = ZoneInfo("America/New_York")
+
+
+def format_xmltv_datetime(value):
+    return value.strftime("%Y%m%d%H%M%S %z")
 
 
 def prettify_xml(elem):
@@ -25,42 +31,7 @@ def generate_epg_from_messages(messages):
     channels = {}
     programs_dict = {}
 
-    if os.path.exists(config.EPG_OUTPUT_FILE):
-        try:
-            tree = ET.parse(config.EPG_OUTPUT_FILE)
-            root = tree.getroot()
-            for ch in root.findall('channel'):
-                ch_id = ch.get('id')
-                name_elem = ch.find('display-name')
-                if ch_id and name_elem is not None:
-                    channels[ch_id] = name_elem.text
-
-            for prog in root.findall('programme'):
-                ch_id = prog.get('channel')
-                start_str = prog.get('start')
-                stop_str = prog.get('stop')
-                title_elem = prog.find('title')
-                title = title_elem.text if title_elem is not None else ""
-                
-                if not start_str or not stop_str:
-                    continue
-                    
-                start_dt_str, offset = start_str.split(' ')
-                try:
-                    start_time = datetime.strptime(start_dt_str, "%Y%m%d%H%M%S")
-                    stop_dt_str, _ = stop_str.split(' ')
-                    stop_time = datetime.strptime(stop_dt_str, "%Y%m%d%H%M%S")
-                except ValueError:
-                    continue
-                
-                programs_dict[(ch_id, start_time)] = {
-                    'channel_id': ch_id, 'title': title, 
-                    'start_time': start_time, 'stop_time': stop_time, 'offset': f" {offset}"
-                }
-        except Exception as e:
-            logger.warning(f"Could not parse existing EPG file: {e}")
-
-    current_year = datetime.now().year
+    current_year = datetime.now(NY_TZ).year
     for message in messages:
         lines = message.text.strip().split('\n')
         for line in lines:
@@ -70,30 +41,48 @@ def generate_epg_from_messages(messages):
                     channels[program_data['channel_id']] = program_data['channel_name']
                 programs_dict[(program_data['channel_id'], program_data['start_time'])] = program_data
 
-    programs = sorted(programs_dict.values(), key=lambda x: (x['channel_id'], x['start_time']))
-    
+    programs = sorted(
+        programs_dict.values(),
+        key=lambda x: (x['channel_id'], x['start_time'])
+    )
+    now_ny = datetime.now(NY_TZ)
+
     logger.info("Generating new EPG XML...")
-    tv_elem = ET.Element('tv', {'generator-info-name': 'Telegram2EPG'})
-    
-    active_prog_channels = {prog['channel_id'] for prog in programs if prog['start_time'] >= datetime.now() - timedelta(days=1)}
+    tv_elem = ET.Element("tv", {"generator-info-name": "Telegram2EPG"})
 
     for ch_id, ch_name in sorted(channels.items()):
-        ch_elem = ET.SubElement(tv_elem, 'channel', {'id': ch_id})
-        ET.SubElement(ch_elem, 'display-name').text = ch_name
+        ch_elem = ET.SubElement(tv_elem, "channel", {'id': ch_id})
+        ET.SubElement(ch_elem, "display-name").text = ch_name
 
     for i, prog in enumerate(programs):
-        if prog['start_time'] < datetime.now() - timedelta(days=1):
+        if prog["start_time"] < now_ny - timedelta(days=1):
             continue
 
         if prog.get('stop_time') is None:
-            next_prog_start = next((p['start_time'] for p in programs[i+1:] if p['channel_id'] == prog['channel_id']), None)
-            prog['stop_time'] = next_prog_start or (prog['start_time'] + timedelta(hours=3))
+            next_prog_start = next(
+                (
+                    p['start_time']
+                    for p in programs[i + 1:]
+                    if p['channel_id'] == prog['channel_id']
+                ),
+                None,
+            )
+            prog['stop_time'] = next_prog_start or (
+                prog['start_time'] + timedelta(hours=3)
+            )
 
-        prog_elem = ET.SubElement(tv_elem, 'programme', {
-            'start': prog['start_time'].strftime("%Y%m%d%H%M%S") + prog['offset'],
-            'stop': prog['stop_time'].strftime("%Y%m%d%H%M%S") + prog['offset'],
-            'channel': prog['channel_id']
-        })
+        if prog['stop_time'] <= prog['start_time']:
+            prog['stop_time'] = prog['start_time'] + timedelta(hours=3)
+
+        prog_elem = ET.SubElement(
+            tv_elem,
+            "programme",
+            {
+                "start": format_xmltv_datetime(prog["start_time"]),
+                "stop": format_xmltv_datetime(prog["stop_time"]),
+                "channel": prog["channel_id"],
+            },
+        )
         ET.SubElement(prog_elem, 'title').text = prog['title']
         ET.SubElement(prog_elem, 'desc').text = prog['title']
 

@@ -1,6 +1,7 @@
 import logging
 from telethon import TelegramClient
 import app.config as config
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,36 @@ class EPGTelegramClient:
             await self.start()
             logger.info("Telegram client reconnected.")
 
-    async def fetch_messages(self, limit=500):
+    async def fetch_messages(self, days=7):
+        """Fetch text messages from the last specified number of days."""
         await self.ensure_connected()
-        """Fetch recent messages from the target chat."""
-        logger.info(f"Fetching messages from {config.TARGET_CHAT}...")
-        messages = self.client.iter_messages(config.TARGET_CHAT, limit=limit) # type: ignore
-        message_list = [message async for message in messages if message.text]
-        logger.info(f"Fetched {len(message_list)} messages with text.")
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+        logger.info(
+            "Fetching messages from %s from the last %s day(s)...",
+            config.TARGET_CHAT,
+            days,
+        )
+
+        messages = self.client.iter_messages(
+            config.TARGET_CHAT,
+            limit=None,
+        )
+
+        message_list = []
+
+        async for message in messages:
+            if message.date < cutoff:
+                break
+
+            if message.text:
+                message_list.append(message)
+
+        logger.info(
+            "Fetched %s messages with text from the last %s day(s).",
+            len(message_list),
+            days,
+        )
+
         return message_list
