@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.parser import PATTERNS, parse_line
-from app.time_utils import convert_utc_to_ny
+from app.parser import PATTERNS, parse_line, ProgramData
+from app.parser.time_utils import convert_utc_to_ny
 
 
 def _pattern_with_group(group_name):
@@ -58,7 +58,7 @@ def test_fallback_time_parsing_and_conversion():
     assert local_dt == datetime(2026, 7, 4, 11, 25, 0, tzinfo=local_dt.tzinfo)
 
 
-def test_uk_et_schedule_line_returns_aware_datetime():
+def test_uk_et_schedule_line_returns_program_data():
     line = (
         "UK| PREMIER LEAGUE+ 01 | Aston Villa vs Arsenal "
         "// UK Mon 31 Aug 8:00pm // ET Mon 31 Aug 3:00pm"
@@ -67,10 +67,43 @@ def test_uk_et_schedule_line_returns_aware_datetime():
     result = parse_line(line, 2026)
 
     assert result is not None
-    assert result["channel_id"] == "premierleague01"
-    assert result["title"] == "Aston Villa vs Arsenal"
-    assert result["start_time"].strftime("%Y-%m-%d %H:%M %z") == (
+    assert isinstance(result, ProgramData)
+    assert result.channel_id == "premierleague01"
+    assert result.title == "Aston Villa vs Arsenal"
+    assert result.start_time.strftime("%Y-%m-%d %H:%M %z") == (
         "2026-08-31 15:00 -0400"
     )
-    assert result["start_time"].tzinfo is not None
-    assert result["stop_time"] is None
+    assert result.start_time.tzinfo is not None
+    assert result.stop_time is None
+
+
+def test_reference_dt_anchors_kickoff_time():
+    from zoneinfo import ZoneInfo
+    line = "PPV| UFC 300 | Main Card, kick-off 10pm ET"
+    # Suppose message was sent on 2026-05-10 at 14:00 NY time
+    ref_dt = datetime(2026, 5, 10, 14, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    result = parse_line(line, ref_dt)
+    assert result is not None
+    assert result.start_time.year == 2026
+    assert result.start_time.month == 5
+    assert result.start_time.day == 10
+    assert result.start_time.hour == 22  # 10pm ET
+    assert result.start_time.minute == 0
+
+
+def test_reference_dt_anchors_simple_time_utc():
+    from zoneinfo import ZoneInfo
+    # Without ET marker, time is assumed UTC and converted to NY (-4 hours during EDT)
+    line = "PPV| BOXING : Canelo vs Crawford 9:00pm"
+    ref_dt = datetime(2026, 9, 20, 11, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    result = parse_line(line, ref_dt)
+    assert result is not None
+    assert result.start_time.year == 2026
+    assert result.start_time.month == 9
+    assert result.start_time.day == 20
+    # 21:00 UTC -> 17:00 EDT
+    assert result.start_time.hour == 17
+
+

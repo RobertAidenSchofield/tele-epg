@@ -1,0 +1,9 @@
+services:
+  telegram-epg:
+    build: .
+    container_name: telegram_epg
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

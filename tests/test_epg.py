@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.config as config
-from app.epg import generate_epg_from_messages
+from app.epg.generator import generate_epg_from_messages
 
 
 NY_TZ = ZoneInfo("America/New_York")
@@ -102,3 +102,85 @@ def test_generation_corrects_invalid_stop_time(tmp_path, monkeypatch):
     stop_time = datetime.strptime(programme.get("stop"), "%Y%m%d%H%M%S %z")
 
     assert stop_time - start_time == timedelta(hours=3)
+
+
+def test_generation_includes_icon_and_rich_desc_and_no_category(tmp_path):
+    import gzip
+    from app.parser import ProgramData
+    from app.epg.generator import generate_epg
+
+    output_file = tmp_path / "epg.xml"
+    start = datetime.now(NY_TZ) + timedelta(days=1)
+
+    prog = ProgramData(
+        channel_name="NFL 01",
+        channel_id="nfl01",
+        title="Denver Broncos at Kansas City Chiefs",
+        start_time=start,
+        stop_time=None,
+        desc="NFL Regular Season: Denver Broncos at Kansas City Chiefs (Live from Arrowhead)",
+        icon_url="https://a.espncdn.com/logo.png",
+        sport="football",
+    )
+
+    generate_epg([prog], str(output_file))
+
+    root = ET.parse(output_file).getroot()
+    p = root.find("programme")
+    assert p is not None
+    assert p.findtext("title") == "Denver Broncos at Kansas City Chiefs"
+    assert p.findtext("desc") == "NFL Regular Season: Denver Broncos at Kansas City Chiefs (Live from Arrowhead)"
+    icon = p.find("icon")
+    assert icon is not None
+    assert icon.get("src") == "https://a.espncdn.com/logo.png"
+    # Ensure NO category tags are present
+    assert p.find("category") is None
+
+    # Verify gzipped file was created and is valid gzip
+    gz_file = tmp_path / "epg.xml.gz"
+    assert gz_file.exists()
+    with gzip.open(gz_file, "rb") as f:
+        decompressed = f.read().decode("utf-8")
+    assert "Denver Broncos at Kansas City Chiefs" in decompressed
+
+
+def test_generation_applies_sport_specific_durations(tmp_path):
+    from app.parser import ProgramData
+    from app.epg.generator import generate_epg
+
+    output_file = tmp_path / "epg.xml"
+    start = datetime.now(NY_TZ) + timedelta(days=1)
+
+    soccer_prog = ProgramData(
+        channel_name="PL 01",
+        channel_id="pl01",
+        title="Arsenal vs Chelsea",
+        start_time=start,
+        stop_time=None,
+        sport="soccer",
+    )
+    football_prog = ProgramData(
+        channel_name="NFL 01",
+        channel_id="nfl01",
+        title="Chiefs vs Broncos",
+        start_time=start,
+        stop_time=None,
+        sport="football",
+    )
+
+    generate_epg([soccer_prog, football_prog], str(output_file))
+
+    root = ET.parse(output_file).getroot()
+    progs = root.findall("programme")
+
+    soccer_elem = next(p for p in progs if p.get("channel") == "pl01")
+    football_elem = next(p for p in progs if p.get("channel") == "nfl01")
+
+    s_start = datetime.strptime(soccer_elem.get("start"), "%Y%m%d%H%M%S %z")
+    s_stop = datetime.strptime(soccer_elem.get("stop"), "%Y%m%d%H%M%S %z")
+    assert s_stop - s_start == timedelta(hours=2)  # soccer default is 2 hours
+
+    f_start = datetime.strptime(football_elem.get("start"), "%Y%m%d%H%M%S %z")
+    f_stop = datetime.strptime(football_elem.get("stop"), "%Y%m%d%H%M%S %z")
+    assert f_stop - f_start == timedelta(hours=3, minutes=30)  # football default is 3.5 hours
+

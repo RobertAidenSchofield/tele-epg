@@ -1,0 +1,25 @@
+# Environment variables
+.env
+!.env.example
+
+# Docker
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Telethon session files
+*.session
+*.session-journal
+
+# Application Data
+/data/epg.xml
+/data/epg.xml.gz
+/data/telegram_session.session
+/data/credentials.json
+
+# OS
+.DS_Store
