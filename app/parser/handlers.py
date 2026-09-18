@@ -30,6 +30,13 @@ def _time_result(start_dt, match, stop_dt=None):
 
     return result
 
+
+def _parse_datetime(value):
+    value = value.strip().replace(" ", "T", 1)
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
+
 def _get_ref_dt(ref, source_tz):
     if isinstance(ref, datetime):
         return ref.astimezone(source_tz)
@@ -39,23 +46,14 @@ def _get_ref_dt(ref, source_tz):
 
 
 def _handle_exact_utc(match, ref):
-    start_dt = datetime.strptime(
-        match.group("start"),
-        "%Y-%m-%d %H:%M:%S"
-    )
-    stop_dt = datetime.strptime(
-        match.group("stop"),
-        "%Y-%m-%d %H:%M:%S"
-    )
+    start_dt = _parse_datetime(match.group("start"))
+    stop_dt = _parse_datetime(match.group("stop"))
 
     return _time_result(start_dt, match, stop_dt)
 
 
 def _handle_iso_utc(match, ref):
-    dt = datetime.strptime(
-        match.group("iso"),
-        "%Y-%m-%d %H:%M:%S"
-    )
+    dt = _parse_datetime(match.group("iso"))
 
     return _time_result(dt, match)
 
@@ -88,12 +86,13 @@ def _handle_kickoff_time(match, ref):
     )
     return _time_result(start_dt, match)
 
-def _infer_start_datetime(time_obj, ref, match):
-    source_tz = (
-        ZoneInfo("America/New_York")
-        if _line_has_et(match)
-        else ZoneInfo("UTC")
-    )
+def _infer_start_datetime(time_obj, ref, match, source_tz=None):
+    if source_tz is None:
+        source_tz = (
+            ZoneInfo("America/New_York")
+            if _line_has_et(match)
+            else ZoneInfo("UTC")
+        )
 
     ref_dt = _get_ref_dt(ref, source_tz)
 
@@ -116,6 +115,24 @@ def _handle_simple_time(match, ref):
 
     start_dt = _infer_start_datetime(time_obj, ref, match)
     return _time_result(start_dt, match)
+
+def _handle_nfl_time(match, ref):
+    return _handle_us_channel_time(match, ref)
+
+def _handle_us_channel_time(match, ref):
+    time_text = match.group("time").strip().lower().replace(" ", "")
+    time_format = "%I:%M%p" if ":" in time_text else "%I%p"
+    time_obj = datetime.strptime(time_text, time_format).time()
+    start_dt = _infer_start_datetime(
+        time_obj,
+        ref,
+        match,
+        ZoneInfo("America/New_York"),
+    )
+    return {
+        "start_time": convert_et_to_ny(start_dt),
+        "stop_time": None,
+    }
 
 def _handle_time_only_et(match, ref):
     """Handler for formats containing only a time."""

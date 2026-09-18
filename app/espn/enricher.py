@@ -63,6 +63,7 @@ def enrich_programs(programs: list[ProgramData]) -> list[ProgramData]:
             espn_time_ny = match.start_time.astimezone(NY_TZ)
             enriched_prog = replace(
                 prog,
+                title=match.name or prog.title,
                 start_time=espn_time_ny,
                 # Clear stop_time so the generator can re-infer it
                 stop_time=None if prog.stop_time is None else prog.stop_time,

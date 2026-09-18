@@ -58,6 +58,8 @@ def parse_message(text: str, reference_dt: datetime | int | None = None) -> list
         parsed = parse_line(line, reference_dt)
         if parsed:
             results.append(parsed)
+        elif line.strip():
+            logger.warning("Unparsed EPG line: %s", line.strip())
     return results
 
 __all__ = ["ProgramData", "parse_line", "parse_message", "PATTERNS"]

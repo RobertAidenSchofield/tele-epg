@@ -1,8 +1,5 @@
-import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
-
-logger = logging.getLogger(__name__)
 
 NY_TZ = ZoneInfo("America/New_York")
 UTC_TZ = ZoneInfo("UTC")

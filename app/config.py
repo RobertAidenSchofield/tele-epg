@@ -1,7 +1,6 @@
 import os
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

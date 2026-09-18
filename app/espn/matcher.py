@@ -1,6 +1,5 @@
 import logging
 import re
-from datetime import timedelta
 
 from rapidfuzz import fuzz
 

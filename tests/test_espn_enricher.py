@@ -48,6 +48,7 @@ def test_enrichment_replaces_time_on_match():
     # The enriched time should be the ESPN time (converted to NY), not the original
     expected_time = espn_event.start_time.astimezone(NY_TZ)
     assert result[0].start_time == expected_time
+    assert result[0].title == espn_event.name
 
 
 def test_enrichment_populates_desc_icon_and_sport():
