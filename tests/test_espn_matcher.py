@@ -1,11 +1,12 @@
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.espn.client import ESPNEvent
+from app.espn.client import ESPNEvent, fetch_espn_events
 from app.espn.matcher import find_best_match, _normalize
 from app.parser import ProgramData
 
@@ -96,3 +97,8 @@ def test_short_name_matching():
     events = [_make_espn_event("Denver Broncos at Kansas City Chiefs", "DEN @ KC")]
     match = find_best_match(prog, events)
     assert match is not None
+
+
+def test_fetch_espn_events_handles_network_failure():
+    with patch("requests.get", side_effect=Exception("Network error")):
+        assert fetch_espn_events("football", "nfl") == []

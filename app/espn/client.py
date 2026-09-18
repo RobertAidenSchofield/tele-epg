@@ -10,6 +10,7 @@ ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 NY_TZ = ZoneInfo("America/New_York")
 
 
+
 @dataclass
 class ESPNEvent:
     """A single event from the ESPN API."""
@@ -119,44 +120,69 @@ def fetch_espn_events(
 ) -> list[ESPNEvent]:
     """Fetch events from the ESPN scoreboard API for a given sport/league.
 
+    Uses month-based querying (e.g. dates=YYYYMM) which is supported across
+    all major ESPN sports on site v2, with a fallback to the default week scoreboard.
+
     Args:
         sport: ESPN sport slug (e.g. "soccer", "football")
         league: ESPN league slug (e.g. "eng.1", "nfl")
-        days: Number of days to fetch (centered on today)
+        days: Number of days in the window (centered on today)
 
     Returns:
         List of ESPNEvent objects, or empty list on failure.
     """
     today = datetime.now(NY_TZ)
-    start_date = (today - timedelta(days=1)).strftime("%Y%m%d")
-    end_date = (today + timedelta(days=days)).strftime("%Y%m%d")
+    months = [today.strftime("%Y%m")]
+    end_month = (today + timedelta(days=days)).strftime("%Y%m")
+    if end_month != months[0]:
+        months.append(end_month)
 
     url = f"{ESPN_BASE_URL}/{sport}/{league}/scoreboard"
-    params = {
-        "dates": f"{start_date}-{end_date}",
-        "limit": 200,
-    }
+    raw_events: list[dict] = []
+    league_name = ""
+    default_logo = ""
 
-    logger.info("Fetching ESPN events: %s/%s (%s to %s)", sport, league, start_date, end_date)
+    # Fetch events for the month(s) covering the guide window
+    for ym in months:
+        logger.info("Fetching ESPN events: %s/%s for %s", sport, league, ym)
+        try:
+            response = requests.get(url, params={"dates": ym, "limit": 500}, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            if not league_name:
+                league_info = data.get("leagues", [{}])[0] if data.get("leagues") else {}
+                league_name = league_info.get("name", "")
+                logos = league_info.get("logos", [])
+                default_logo = logos[0].get("href", "") if logos else ""
+            raw_events.extend(data.get("events", []))
+        except Exception as e:
+            logger.warning("ESPN API month request failed for %s/%s (%s): %s", sport, league, ym, e)
 
-    try:
-        response = requests.get(url, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as e:
-        logger.warning("ESPN API request failed for %s/%s: %s", sport, league, e)
-        return []
-    except ValueError as e:
-        logger.warning("ESPN API returned invalid JSON for %s/%s: %s", sport, league, e)
-        return []
+    # Fallback to default (current week/round) if month queries returned nothing
+    if not raw_events:
+        logger.info("Falling back to default scoreboard call for %s/%s", sport, league)
+        try:
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            if not league_name:
+                league_info = data.get("leagues", [{}])[0] if data.get("leagues") else {}
+                league_name = league_info.get("name", "")
+                logos = league_info.get("logos", [])
+                default_logo = logos[0].get("href", "") if logos else ""
+            raw_events.extend(data.get("events", []))
+        except Exception as e:
+            logger.warning("ESPN API fallback request failed for %s/%s: %s", sport, league, e)
+            return []
 
-    events = []
-    league_info = data.get("leagues", [{}])[0] if data.get("leagues") else {}
-    league_name = league_info.get("name", "")
-    logos = league_info.get("logos", [])
-    default_logo = logos[0].get("href", "") if logos else ""
+    # Parse and deduplicate events by id
+    events: list[ESPNEvent] = []
+    seen_ids: set[str] = set()
 
-    for event_data in data.get("events", []):
+    for event_data in raw_events:
+        eid = str(event_data.get("id", ""))
+        if eid and eid in seen_ids:
+            continue
         event = _parse_event(
             event_data,
             sport=sport,
@@ -164,6 +190,8 @@ def fetch_espn_events(
             default_logo=default_logo,
         )
         if event is not None:
+            if eid:
+                seen_ids.add(eid)
             events.append(event)
 
     logger.info("Fetched %d events from ESPN %s/%s", len(events), sport, league)

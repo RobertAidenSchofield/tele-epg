@@ -112,3 +112,13 @@ def test_no_leagues_detected_skips_enrichment():
 def test_empty_programs_returns_empty():
     result = enrich_programs([])
     assert result == []
+
+
+def test_generic_channels_trigger_core_leagues():
+    from app.espn.leagues import detect_leagues, CORE_SPORTS_LEAGUES
+    prog = _make_program("Lions @ bills", channel="TNT Sports Event 02")
+    leagues = detect_leagues([prog])
+    # Core in-season leagues like NFL and EPL should be included
+    assert ("football", "nfl") in leagues
+    assert ("soccer", "eng.1") in leagues
+    assert len(leagues) >= len(CORE_SPORTS_LEAGUES)
